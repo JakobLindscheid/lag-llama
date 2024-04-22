@@ -17,6 +17,7 @@ import warnings
 warnings.simplefilter(action="ignore", category=FutureWarning)
 warnings.simplefilter(action="ignore", category=UserWarning)
 
+import time
 import argparse
 import gc
 import json
@@ -27,6 +28,7 @@ from pathlib import Path
 import lightning
 import torch
 torch.cuda.set_per_process_memory_fraction(1.0, 0)
+torch.set_float32_matmul_precision('medium')
 import wandb
 from gluonts.evaluation import Evaluator, make_evaluation_predictions
 from gluonts.evaluation._base import aggregate_valid
@@ -80,7 +82,8 @@ def train(args):
     elif args.get_ckpt_path_from_experiment_name:
         fulldir_experiments_for_ckpt_path = os.path.join(args.results_dir, args.get_ckpt_path_from_experiment_name, str(args.seed))
         full_experiment_name_original = args.get_ckpt_path_from_experiment_name + "-seed-" + str(args.seed)
-        experiment_id_original = sha1(full_experiment_name_original.encode("utf-8")).hexdigest()[:8]
+        # experiment_id_original = sha1(full_experiment_name_original.encode("utf-8")).hexdigest()[:8]
+        experiment_id_original = os.listdir(os.path.join(fulldir_experiments_for_ckpt_path, "lag-llama"))[0]
         checkpoint_dir_wandb = os.path.join(fulldir_experiments_for_ckpt_path, "lag-llama", experiment_id_original, "checkpoints")
         file = os.listdir(checkpoint_dir_wandb)[-1]
         if file: ckpt_path = os.path.join(checkpoint_dir_wandb, file)
@@ -103,7 +106,8 @@ def train(args):
         else:
             if args.evaluate_only:
                 full_experiment_name_original = experiment_name + "-seed-" + str(args.seed)
-                experiment_id_original = sha1(full_experiment_name_original.encode("utf-8")).hexdigest()[:8]
+                # experiment_id_original = sha1(full_experiment_name_original.encode("utf-8")).hexdigest()[:8]
+                experiment_id_original = os.listdir(os.path.join(fulldir_experiments, "lag-llama"))[0]
                 checkpoint_dir_wandb = os.path.join(fulldir_experiments, "lag-llama", experiment_id_original, "checkpoints")
                 file = os.listdir(checkpoint_dir_wandb)[-1]
                 if file: ckpt_path = os.path.join(checkpoint_dir_wandb, file)
@@ -113,6 +117,7 @@ def train(args):
                         ckpt_path = checkpoint_dir + "/" + file
                         break
 
+    # ckpt_path = None # for testing
     if ckpt_path:
         print("Checkpoint", ckpt_path, "retrieved from experiment directory")
     else:
@@ -127,7 +132,8 @@ def train(args):
                         save_dir=fulldir_experiments, group=experiment_name, \
                         tags=args.wandb_tags, entity=args.wandb_entity, \
                         project=args.wandb_project, allow_val_change=True, \
-                        config=vars(args), id=experiment_id, \
+                        config=vars(args), \
+                        # id=experiment_id, \
                         mode=args.wandb_mode, settings=wandb.Settings(code_dir="."))
     
     # Callbacks
@@ -455,7 +461,7 @@ def train(args):
             estimator.trainer_kwargs["callbacks"] = callbacks
             estimator.trainer_kwargs["logger"] = logger
             estimator.trainer_kwargs["default_root_dir"] = fulldir_experiments
-            if batch_size > 1: batch_size //= 2
+            # if batch_size > 1: batch_size //= 2
             estimator.batch_size = batch_size
             print("\nUsing a batch size of", batch_size, "\n")
             wandb.config.update({"batch_size": batch_size}, allow_val_change=True)
@@ -480,7 +486,8 @@ def train(args):
     os.makedirs(metrics_dir, exist_ok=True)
 
     # Evaluate
-    evaluation_datasets = args.test_datasets + train_dataset_names if not args.single_dataset else [args.single_dataset]
+    # evaluation_datasets = args.test_datasets + train_dataset_names if not args.single_dataset else [args.single_dataset]
+    evaluation_datasets = args.test_datasets if not args.single_dataset else [args.single_dataset]
 
     for name in evaluation_datasets:  # [test_dataset]:
         print("Evaluating on", name)
@@ -506,8 +513,10 @@ def train(args):
                 forecast_it, ts_it = make_evaluation_predictions(
                     dataset=test_data, predictor=predictor, num_samples=args.num_samples
                 )
+                start = time.time()
                 forecasts = list(forecast_it)
                 tss = list(ts_it)
+                print("Time taken for evaluation:", time.time() - start)
                 break
             except RuntimeError as e:
                 if "out of memory" in str(e):
