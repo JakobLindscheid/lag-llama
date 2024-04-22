@@ -200,7 +200,7 @@ def create_train_and_val_datasets_with_dates(
         # Compute train_start_index based on last_k_percentage
         if last_k_percentage:
             number_of_values = int(len(s_train["target"]) * last_k_percentage / 100)
-            train_start_index = train_end_index - number_of_values
+            train_start_index = max(train_end_index - number_of_values, 0) # NOTE: hotfix for 100% fine tuning to not change few-shot results
         else:
             train_start_index = 0
         s_train["target"] = series["target"][train_start_index:train_end_index]
