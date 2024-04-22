@@ -26,6 +26,7 @@ from pathlib import Path
 
 import lightning
 import torch
+torch.cuda.set_per_process_memory_fraction(1.0, 0)
 import wandb
 from gluonts.evaluation import Evaluator, make_evaluation_predictions
 from gluonts.evaluation._base import aggregate_valid
