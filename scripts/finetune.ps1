@@ -8,7 +8,7 @@ foreach ($FINETUNE_DATASET in $FINETUNE_DATASETS) {
     $EXP_NAME = "{0}_finetune_on_{1}" -f $PRETRAINING_EXP_NAME, $FINETUNE_DATASET
 
     # We reuse the same seeds as used for pretraining
-    $FILENAME = "C:/Users/jakob/Desktop/wandb/experiments/seeds/$PRETRAINING_EXP_NAME"
+    $FILENAME = "experiments/seeds/$PRETRAINING_EXP_NAME"
     Write-Output $PRETRAINING_EXP_NAME
 
     # Get the seeds
@@ -28,7 +28,7 @@ foreach ($FINETUNE_DATASET in $FINETUNE_DATASETS) {
 
         python run.py `
         -e $EXPERIMENT_NAME -d "datasets" --seed $SEED `
-        -r "C:/Users/jakob/Desktop/wandb/experiments/results" `
+        -r "experiments/results" `
         --batch_size 512 -m 1000 -n 128 `
         --wandb_entity "jakobl" --wandb_project "lag-llama" `
         --num_workers 2 --args_from_dict_path $CONFIGPATH --search_batch_size `

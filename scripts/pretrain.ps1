@@ -11,7 +11,7 @@ New-Item -ItemType Directory -Path experiments/seeds -Force
 New-Item -ItemType Directory -Path experiments/results -Force
 
 $EXP_NAME = "pretraining_lag_llama"
-$FILENAME = "C:/Users/jakob/Desktop/wandb/experiments/seeds/${EXP_NAME}"
+$FILENAME = "experiments/seeds/${EXP_NAME}"
 $CONFIGPATH = "configs/lag_llama.json"
 
 Write-Output $EXP_NAME
@@ -50,7 +50,7 @@ foreach ($SEED in $SEEDS) {
 
     python run.py `
     -e $EXP_NAME -d "datasets" --seed $SEED `
-    -r "C:/Users/jakob/Desktop/wandb/experiments/results" `
+    -r "experiments/results" `
     --batch_size 512 -m 1000 -n 128 `
     --wandb_entity "jakobl" --wandb_project "lag-llama" `
     --all_datasets "australian_electricity_demand" "electricity_hourly" "london_smart_meters_without_missing" "solar_10_minutes" "wind_farms_without_missing" "pedestrian_counts" "uber_tlc_hourly" "traffic" "kdd_cup_2018_without_missing" "saugeenday" "sunspot_without_missing" "exchange_rate" "cpu_limit_minute" "cpu_usage_minute" "function_delay_minute" "instances_minute" "memory_limit_minute" "memory_usage_minute" "platform_delay_minute" "requests_minute" "ett_h1" "ett_h2" "ett_m1" "ett_m2" "beijing_pm25" "AirQualityUCI" "beijing_multisite" "weather" `
