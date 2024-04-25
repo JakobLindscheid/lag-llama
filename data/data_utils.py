@@ -129,7 +129,117 @@ def create_train_dataset_last_k_percentage(
     train_data = ListDataset(train_data, freq=freq)
 
     return train_data
+    
+def transform_data(data, metadata, dataset_name):
+    # Transforms the data DataFrame and metadata into JSON format.
 
+    output = {"data": [], "metadata": {}}
+
+    # Define the mapping of frequency to its corresponding prediction length
+    prediction_length_mapping = {
+        "4S": 30,   # 4 seconds -> prediction length = 30
+        "30T": 24,  # Half-hourly (30 minutes) -> prediction length = 24
+        "1H": 24,   # Hourly -> prediction length = 24
+        "1D": 30,   # Daily -> prediction length = 30
+        "1W": 26,   # Weekly -> prediction length = 26
+        "1M": 12,   # Monthly -> prediction length = 12
+        "3M": 12,   # Quarterly -> prediction length = 12
+        "1Y": 5     # Yearly -> prediction length = 5
+    }
+
+    frequency_mapping = {
+        "4_seconds" : "4S",
+        "half_hourly": "30T",
+        "hourly": "1H",
+        "daily": "1D",
+        "weekly": "1W",
+        "monthly": "1M",
+        "quarterly": "3M",
+        "yearly": "1Y"
+    }
+    freq = frequency_mapping.get(metadata.get("frequency", "hourly"))
+    prediction_length = prediction_length_mapping.get(freq, 24)  # Default to 24 if not found
+
+    output["metadata"] = {
+        "freq": freq,
+        "prediction_length": prediction_length
+    }
+
+    # Define the desired datetime format and default initial timestamps
+    datetime_format = "%Y-%m-%d %H:%M:%S"
+    if dataset_name in ("cif_2016_dataset"):
+      initial_timestamp = "2015-01-01 00:00:00"
+    elif dataset_name in ("dominick_dataset"):
+      initial_timestamp = "1989-09-01 00:00:00"
+
+    if "start_timestamp" in data.columns:
+      for index, row in data.iterrows():
+        start_timestamp = row["start_timestamp"].strftime(datetime_format)
+        series_value = list(row["series_value"])
+        series_name = row["series_name"]
+
+        data_item = {
+            "start": start_timestamp,
+            "target": series_value,
+            "item_id": series_name
+        }
+        output["data"].append(data_item)
+    else:
+      # Use the fixed initial timestamp
+      start_timestamp = initial_timestamp
+    
+      for index, row in data.iterrows():
+        series_value = list(row["series_value"])
+        series_name = row["series_name"]
+
+        data_item = {
+            "start": start_timestamp,
+            "target": series_value,
+            "item_id": series_name
+        }
+        output["data"].append(data_item)
+
+    output_json = json.dumps(output, indent=4)
+    return output_json
+    
+def load_abnormal_heartbeat():
+    path_train = "/content/AbnormalHeartbeat_TRAIN.arff" # Change the path based on the file location
+    path_test = "/content/AbnormalHeartbeat_TEST.arff" # Change the path based on the file location
+
+    train_data, train_meta = arff.loadarff(path_train)
+    test_data, test_meta = arff.loadarff(path_test)
+
+    df_train = pd.DataFrame(train_data)
+    df_test = pd.DataFrame(test_data)
+
+    start_date = "2016-01-09 00:00:00"  # Modify as needed
+
+    train_series_list = []
+    test_series_list = []
+
+    for column in df_train.columns[:-1]:
+        target_data = df_train[column].values
+
+        train_series_entry = {
+            "start": start_date,
+            "target": target_data,
+            "item_id": column
+        }
+        train_series_list.append(time_series_entry)
+    train_ds = ListDataset(time_series_list, freq="1H")
+
+    for column in df_test.columns[:-1]:
+        target_data = df_test[column].values
+        test_series_entry = {
+            "start": start_date,
+            "target": target_data,
+            "item_id": column
+        }
+        test_series_list.append(time_series_entry)
+    test_ds = ListDataset(time_series_list, freq="0.003S")
+    ds = TrainDatasets(metadata=metadata, train=train_ds, test=test_ds)
+    return ds
+    
 def create_train_and_val_datasets_with_dates(
     name,
     dataset_path,
@@ -172,6 +282,31 @@ def create_train_and_val_datasets_with_dates(
         full_dataset = ListDataset(train_test_data, freq=metadata.freq)
         train_ds = create_train_dataset_without_last_k_timesteps(full_dataset, freq=metadata.freq, k=24)
         raw_dataset = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
+    elif name in ('car_parts_dataset_without_missing_values', 'cif_2016_dataset',
+                  'covid_deaths_dataset', 'covid_mobility_dataset_without_missing_values', 
+                  'dominick_dataset', 'elecdemand_dataset', 'electricity_weekly_dataset', 
+                  'fred_md_dataset', 'hospital_dataset',
+                  'kaggle_web_traffic_dataset_without_missing_values',
+                  'kaggle_web_traffic_weekly_dataset', 'm1_monthly_dataset',
+                  'm1_quarterly_dataset', 'm1_yearly_dataset', 'm3_monthly_dataset',
+                  'm3_quarterly_dataset', 'm3_yearly_dataset', 'm4_daily_dataset',
+                  'm4_hourly_dataset',  'm4_monthly_dataset', 'm4_quarterly_dataset',
+                  'm4_weekly_dataset', 'm4_yearly_dataset',
+                  'nn5_daily_dataset_without_missing_values', 'nn5_weekly_dataset',
+                  'solar_4_seconds_dataset', 'solar_weekly_dataset', 'tourism_monthly_dataset',
+                  'tourism_quarterly_dataset', 'tourism_yearly_dataset', 'traffic_weekly_dataset',
+                  'us_births_dataset', 'weather_dataset', 'wind_4_seconds_dataset'):
+        data, metadata = load_forecasting(name, return_metadata=True)
+        output_json = transform_data(data, metadata, name)
+        output_dict = json.loads(output_json)
+        data = output_dict.get("data", [])
+        metadata = output_dict.get("metadata", {})
+        train_test_data = [x for x in data if type(x["target"][0]) != str]
+        full_dataset = ListDataset(train_test_data, freq=metadata["freq"])
+        train_ds = create_train_dataset_without_last_k_timesteps(full_dataset, freq=metadata["freq"], k=metadata["prediction_length"])
+        ds = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
+    elif dataset_name in ('AbnormalHeartbeat'):
+        ds=load_abnormal_heartbeat()
     else:
         raw_dataset = get_dataset(name, path=dataset_path)
 
@@ -294,6 +429,31 @@ def create_test_dataset(
         full_dataset = ListDataset(train_test_data, freq=metadata.freq)
         train_ds = create_train_dataset_without_last_k_timesteps(full_dataset, freq=metadata.freq, k=24)
         dataset = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
+    elif name in ('car_parts_dataset_without_missing_values', 'cif_2016_dataset',
+                  'covid_deaths_dataset', 'covid_mobility_dataset_without_missing_values', 
+                  'dominick_dataset', 'elecdemand_dataset', 'electricity_weekly_dataset', 
+                  'fred_md_dataset', 'hospital_dataset',
+                  'kaggle_web_traffic_dataset_without_missing_values',
+                  'kaggle_web_traffic_weekly_dataset', 'm1_monthly_dataset',
+                  'm1_quarterly_dataset', 'm1_yearly_dataset', 'm3_monthly_dataset',
+                  'm3_quarterly_dataset', 'm3_yearly_dataset', 'm4_daily_dataset',
+                  'm4_hourly_dataset',  'm4_monthly_dataset', 'm4_quarterly_dataset',
+                  'm4_weekly_dataset', 'm4_yearly_dataset',
+                  'nn5_daily_dataset_without_missing_values', 'nn5_weekly_dataset',
+                  'solar_4_seconds_dataset', 'solar_weekly_dataset', 'tourism_monthly_dataset',
+                  'tourism_quarterly_dataset', 'tourism_yearly_dataset', 'traffic_weekly_dataset',
+                  'us_births_dataset', 'weather_dataset', 'wind_4_seconds_dataset'):
+        data, metadata = load_forecasting(name, return_metadata=True)
+        output_json = transform_data(data, metadata, name)
+        output_dict = json.loads(output_json)
+        data = output_dict.get("data", [])
+        metadata = output_dict.get("metadata", {})
+        train_test_data = [x for x in data if type(x["target"][0]) != str]
+        full_dataset = ListDataset(train_test_data, freq=metadata["freq"])
+        train_ds = create_train_dataset_without_last_k_timesteps(full_dataset, freq=metadata["freq"], k=metadata["prediction_length"])
+        ds = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
+    elif dataset_name in ('AbnormalHeartbeat'):
+        ds=load_abnormal_heartbeat()
     else:
         dataset = get_dataset(name, path=dataset_path)
 
