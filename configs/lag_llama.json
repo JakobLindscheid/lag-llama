@@ -11,5 +11,6 @@
     "freq_mask_rate": 0.5,
     "freq_mixing_rate": 0.25,
     "weight_decay": 0.0,
-    "dropout": 0.0
+    "dropout": 0.0,
+    "use_mamba": false
 }

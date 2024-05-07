@@ -156,7 +156,9 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         track_loss_per_series: bool = False,
         ckpt_path: Optional[str] = None,
         nonnegative_pred_samples: bool = False,
-        device: torch.device = torch.device("cuda")
+        device: torch.device = torch.device("cuda"),
+        # Our extra settings
+        use_mamba: bool = False,
     ) -> None:
         default_trainer_kwargs = {"max_epochs": 100}
         if trainer_kwargs is not None:
@@ -243,6 +245,8 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         self.cosine_annealing_lr_args = cosine_annealing_lr_args
         self.device = device
 
+        self.use_mamba = use_mamba
+
     @classmethod
     def derive_auto_fields(cls, train_iter):
         stats = calculate_dataset_statistics(train_iter)
@@ -297,6 +301,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
             "rope_scaling": self.rope_scaling,
             "time_feat": self.time_feat,
             "dropout": self.dropout,
+            "use_mamba": self.use_mamba,
         }
         if self.ckpt_path is not None:
             return LagLlamaLightningModule.load_from_checkpoint(

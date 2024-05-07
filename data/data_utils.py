@@ -305,7 +305,7 @@ def create_train_and_val_datasets_with_dates(
         full_dataset = ListDataset(train_test_data, freq=metadata["freq"])
         train_ds = create_train_dataset_without_last_k_timesteps(full_dataset, freq=metadata["freq"], k=metadata["prediction_length"])
         ds = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
-    elif dataset_name in ('AbnormalHeartbeat'):
+    elif name in ('AbnormalHeartbeat'):
         ds=load_abnormal_heartbeat()
     else:
         raw_dataset = get_dataset(name, path=dataset_path)

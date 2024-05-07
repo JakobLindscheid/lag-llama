@@ -247,6 +247,7 @@ def train(args):
         num_parallel_samples=args.num_parallel_samples,
         time_feat=args.time_feat,
         dropout=args.dropout,
+        use_mamba=args.use_mamba,
         lags_seq=args.lags_seq,
         data_id_to_name_map=data_id_to_name_map,
         use_cosine_annealing_lr=args.use_cosine_annealing_lr,
@@ -840,6 +841,9 @@ if __name__ == "__main__":
 
     # Distribution output
     parser.add_argument('--distr_output', type=str, default="studentT", choices=["studentT"])
+    
+    # Mamba
+    parser.add_argument('--use_mamba', action="store_true", default=False)
 
     args = parser.parse_args()
 

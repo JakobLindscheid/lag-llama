@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from mamba_ssm import Mamba
+
 import math
 from dataclasses import dataclass
 from typing import List, Optional
@@ -36,6 +38,7 @@ class LTSMConfig:
     n_embd_per_head: int = 128
     rope_scaling: Optional[dict] = None
     dropout: float = 0.0
+    use_mamba: bool = False
 
 
 class Block(nn.Module):
@@ -193,29 +196,56 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids):
 class CausalSelfAttention(nn.Module):
     def __init__(self, config: LTSMConfig) -> None:
         super().__init__()
-        # query projections for all heads, but in a batch
-        self.q_proj = nn.Linear(
-            config.n_embd_per_head * config.n_head,
-            config.n_embd_per_head * config.n_head,
-            bias=False,
-        )
-        # key, value projections
-        self.kv_proj = nn.Linear(
-            config.n_embd_per_head * config.n_head,
-            2 * config.n_embd_per_head * config.n_head,
-            bias=False,
-        )
-        # output projection
-        self.c_proj = nn.Linear(
-            config.n_embd_per_head * config.n_head,
-            config.n_embd_per_head * config.n_head,
-            bias=False,
-        )
+        # The name is no longer really correct, but this class used to
+        #   apply the transformer layers to the sequence.
+        # Now it performs a transformation on the sequence which is
+        #   either through a transformer or a mamba module.
+
+        if not config.use_mamba:
+            # query projections for all heads, but in a batch
+            self.q_proj = nn.Linear(
+                config.n_embd_per_head * config.n_head,
+                config.n_embd_per_head * config.n_head,
+                bias=False,
+            )
+            # key, value projections
+            self.kv_proj = nn.Linear(
+                config.n_embd_per_head * config.n_head,
+                2 * config.n_embd_per_head * config.n_head,
+                bias=False,
+            )
+            # output projection
+            self.c_proj = nn.Linear(
+                config.n_embd_per_head * config.n_head,
+                config.n_embd_per_head * config.n_head,
+                bias=False,
+            )
+        else:
+            self.mamba_w = 64
+            self.mamba_in = nn.Linear(
+                config.n_embd_per_head * config.n_head,
+                self.mamba_w,
+                bias=False,
+            )
+
+            self.mamba = Mamba(
+                d_model=self.mamba_w,
+                d_state=16,
+                d_conv=4,
+                expand=2,
+            ).to("cuda")
+
+            self.mamba_out = nn.Linear(
+                self.mamba_w,
+                config.n_embd_per_head * config.n_head,
+                bias=False,
+            )
 
         self.n_head = config.n_head
         self.n_embd_per_head = config.n_embd_per_head
         self.block_size = config.block_size
         self.dropout = config.dropout
+        self.use_mamba = config.use_mamba
 
         self.rope_scaling = config.rope_scaling
         self._rope_scaling_validation()
@@ -283,60 +313,64 @@ class CausalSelfAttention(nn.Module):
     def forward(self, x: torch.Tensor, use_kv_cache: bool) -> torch.Tensor:
         # batch size, sequence length, embedding dimensionality (n_embd)
         (B, T, C) = x.size()
+        
+        if not self.use_mamba:
+            # calculate query, key, values for all heads in batch and move head forward to be the batch dim
+            q = self.q_proj(x)
+            k, v = self.kv_proj(x).split(self.n_embd_per_head * self.n_head, dim=2)
 
-        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        q = self.q_proj(x)
-        k, v = self.kv_proj(x).split(self.n_embd_per_head * self.n_head, dim=2)
+            if use_kv_cache:
+                # Optimized for single next prediction
+                if self.kv_cache is not None:
+                    # Update cache
+                    k = torch.cat([self.kv_cache[0], k], dim=1)[:, 1:]
+                    v = torch.cat([self.kv_cache[1], v], dim=1)[:, 1:]
+                    self.kv_cache = k, v
+                else:
+                    # Build cache
+                    self.kv_cache = k, v
 
-        if use_kv_cache:
-            # Optimized for single next prediction
-            if self.kv_cache is not None:
-                # Update cache
-                k = torch.cat([self.kv_cache[0], k], dim=1)[:, 1:]
-                v = torch.cat([self.kv_cache[1], v], dim=1)[:, 1:]
-                self.kv_cache = k, v
+            k = k.view(B, -1, self.n_head, self.n_embd_per_head).transpose(
+                1, 2
+            )  # (B, nh, T, hs)
+            q = q.view(B, -1, self.n_head, self.n_embd_per_head).transpose(
+                1, 2
+            )  # (B, nh, T, hs)
+            v = v.view(B, -1, self.n_head, self.n_embd_per_head).transpose(
+                1, 2
+            )  # (B, nh, T, hs)
+
+            if self.rotary_emb is not None:
+                cos, sin = self.rotary_emb(device=v.device, dtype=v.dtype, seq_len=T)
+                q, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids=None)
+
+            # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
+            #  att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+            #  att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
+            #  att = F.softmax(att, dim=-1)
+            #  y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+
+            # efficient attention using Flash Attention CUDA kernels
+            # When using kv cache at inference, is_causal=False since decoder is causal, at each generation step we want
+            # to avoid recalculating the same previous token attention
+            if use_kv_cache:
+                y = F.scaled_dot_product_attention(
+                    q, k, v, attn_mask=None, dropout_p=self.dropout, is_causal=False
+                )
             else:
-                # Build cache
-                self.kv_cache = k, v
+                y = F.scaled_dot_product_attention(
+                    q, k, v, attn_mask=None, dropout_p=self.dropout, is_causal=True
+                )
 
-        k = k.view(B, -1, self.n_head, self.n_embd_per_head).transpose(
-            1, 2
-        )  # (B, nh, T, hs)
-        q = q.view(B, -1, self.n_head, self.n_embd_per_head).transpose(
-            1, 2
-        )  # (B, nh, T, hs)
-        v = v.view(B, -1, self.n_head, self.n_embd_per_head).transpose(
-            1, 2
-        )  # (B, nh, T, hs)
+            # re-assemble all head outputs side by side
+            y = y.transpose(1, 2).contiguous().view(B, T, C)
 
-        if self.rotary_emb is not None:
-            cos, sin = self.rotary_emb(device=v.device, dtype=v.dtype, seq_len=T)
-            q, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids=None)
-
-        # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
-        #  att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-        #  att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
-        #  att = F.softmax(att, dim=-1)
-        #  y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-
-        # efficient attention using Flash Attention CUDA kernels
-        # When using kv cache at inference, is_causal=False since decoder is causal, at each generation step we want
-        # to avoid recalculating the same previous token attention
-        if use_kv_cache:
-            y = F.scaled_dot_product_attention(
-                q, k, v, attn_mask=None, dropout_p=self.dropout, is_causal=False
-            )
+            # output projection
+            y = self.c_proj(y)
         else:
-            y = F.scaled_dot_product_attention(
-                q, k, v, attn_mask=None, dropout_p=self.dropout, is_causal=True
-            )
-
-        # re-assemble all head outputs side by side
-        y = y.transpose(1, 2).contiguous().view(B, T, C)
-
-        # output projection
-        y = self.c_proj(y)
-
+            x = self.mamba_in(x)
+            x = self.mamba(x)
+            y = self.mamba_out(x)
         return y
 
 
@@ -409,6 +443,8 @@ class LagLlamaModel(nn.Module):
         num_parallel_samples: int = 100,
         time_feat: bool = True,
         dropout: float = 0.0,
+        # Our settings
+        use_mamba: bool = True,
     ) -> None:
         super().__init__()
         self.context_length = context_length
@@ -426,6 +462,7 @@ class LagLlamaModel(nn.Module):
             feature_size=feature_size,
             rope_scaling=rope_scaling,
             dropout=dropout,
+            use_mamba=use_mamba,
         )
         self.num_parallel_samples = num_parallel_samples
 
