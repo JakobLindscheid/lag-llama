@@ -170,6 +170,8 @@ def train(args):
     if not args.single_dataset:
         train_dataset_names = args.all_datasets
         for test_dataset in args.test_datasets:
+            if test_dataset not in train_dataset_names:
+                raise ValueError(f"Test dataset {test_dataset} not in datasets")
             train_dataset_names.remove(test_dataset)
         print("Training datasets:", train_dataset_names)
         print("Test datasets:", args.test_datasets)

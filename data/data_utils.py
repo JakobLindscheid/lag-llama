@@ -186,7 +186,7 @@ def transform_data(data, metadata, dataset_name):
         output["data"].append(data_item)
     else:
       # Use the fixed initial timestamp
-      start_timestamp = initial_timestamp
+      start_timestamp = initial_timestamp # BUG: inital_timestamp is not defined here
     
       for index, row in data.iterrows():
         series_value = list(row["series_value"])
@@ -225,8 +225,8 @@ def load_abnormal_heartbeat():
             "target": target_data,
             "item_id": column
         }
-        train_series_list.append(time_series_entry)
-    train_ds = ListDataset(time_series_list, freq="1H")
+        train_series_list.append(train_series_entry)
+    train_ds = ListDataset(train_series_list, freq="1H")
 
     for column in df_test.columns[:-1]:
         target_data = df_test[column].values
@@ -235,9 +235,9 @@ def load_abnormal_heartbeat():
             "target": target_data,
             "item_id": column
         }
-        test_series_list.append(time_series_entry)
-    test_ds = ListDataset(time_series_list, freq="0.003S")
-    ds = TrainDatasets(metadata=metadata, train=train_ds, test=test_ds)
+        test_series_list.append(test_series_entry)
+    test_ds = ListDataset(test_series_list, freq="0.003S")
+    ds = TrainDatasets(metadata=metadata, train=train_ds, test=test_ds) # BUG: metadata is not defined here
     return ds
     
 def create_train_and_val_datasets_with_dates(
@@ -300,13 +300,13 @@ def create_train_and_val_datasets_with_dates(
         output_json = transform_data(data, metadata, name)
         output_dict = json.loads(output_json)
         data = output_dict.get("data", [])
-        metadata = output_dict.get("metadata", {})
+        metadata = MetaData(**output_dict.get("metadata", {}))
         train_test_data = [x for x in data if type(x["target"][0]) != str]
-        full_dataset = ListDataset(train_test_data, freq=metadata["freq"])
-        train_ds = create_train_dataset_without_last_k_timesteps(full_dataset, freq=metadata["freq"], k=metadata["prediction_length"])
-        ds = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
+        full_dataset = ListDataset(train_test_data, freq=metadata.freq)
+        train_ds = create_train_dataset_without_last_k_timesteps(full_dataset, freq=metadata.freq, k=metadata.prediction_length)
+        raw_dataset = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
     elif name in ('AbnormalHeartbeat'):
-        ds=load_abnormal_heartbeat()
+        raw_dataset = load_abnormal_heartbeat()
     else:
         raw_dataset = get_dataset(name, path=dataset_path)
 
@@ -451,9 +451,9 @@ def create_test_dataset(
         train_test_data = [x for x in data if type(x["target"][0]) != str]
         full_dataset = ListDataset(train_test_data, freq=metadata["freq"])
         train_ds = create_train_dataset_without_last_k_timesteps(full_dataset, freq=metadata["freq"], k=metadata["prediction_length"])
-        ds = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
-    elif dataset_name in ('AbnormalHeartbeat'):
-        ds=load_abnormal_heartbeat()
+        dataset = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
+    elif name in ('AbnormalHeartbeat'):
+        dataset = load_abnormal_heartbeat()
     else:
         dataset = get_dataset(name, path=dataset_path)
 

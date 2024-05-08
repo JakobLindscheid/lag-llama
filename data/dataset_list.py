@@ -12,38 +12,50 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ALL_DATASETS = [ #27
+ALL_DATASETS = [ #27 original datasets
+    # energy
     "australian_electricity_demand", 
     "electricity_hourly", 
     "london_smart_meters_without_missing", 
     "solar_10_minutes", 
     "wind_farms_without_missing", 
-    "pedestrian_counts", 
-    "uber_tlc_hourly", 
+    "ett_h1", 
+    "ett_h2", 
+    "ett_m1", 
+    "ett_m2", # test
+
+    # transport    
     "traffic", 
+    "uber_tlc_hourly", 
+    "pedestrian_counts", # test
+        
+    # nature
     "kdd_cup_2018_without_missing", 
-    "saugeenday", 
     "sunspot_without_missing", 
-    "exchange_rate", 
+    'weather', # test
+
+    # air quality
+    "beijing_multisite",
+    "AirQualityUCI",
+    "beijing_pm25", # test
+    
+    # "saugeenday", # not mentioned in the paper
+    
+    # cloud    
     "cpu_limit_minute", 
     "cpu_usage_minute", 
     "function_delay_minute", 
     "instances_minute", 
     "memory_limit_minute", 
     "memory_usage_minute", 
-    "platform_delay_minute", 
-    "requests_minute", 
-    "ett_h1", 
-    "ett_h2", 
-    "ett_m1", 
-    "ett_m2", 
-    "beijing_pm25", 
-    "AirQualityUCI", 
-    "beijing_multisite"
-]
+    "requests_minute", # test
+    "platform_delay_minute", # test
+    
+    # economy
+    "exchange_rate", 
 
-ALL_DATASETS_NEW_REPOSITORY = [ #34 (Tot: 61)
-    'AbnormalHeartbeat',                                     # 300 Hz       # Health 
+# NEW_REPOSITORY = #34 (Tot: 61)
+    #'AbnormalHeartbeat',                                     # 300 Hz       # Health 
     'car_parts_dataset_without_missing_values',              # Monthly,     # Sales      equal length
     'cif_2016_dataset',                                      # Monthly,     # Banking      
     'covid_deaths_dataset',                                  # Daily,       # Nature     equal length
@@ -75,6 +87,5 @@ ALL_DATASETS_NEW_REPOSITORY = [ #34 (Tot: 61)
     'tourism_yearly_dataset',                                # Yearly,      # Tourism
     'traffic_weekly_dataset',                                # Weekly,      # Transport  equal length
     'us_births_dataset',                                     # Daily,       # Nature     equal length
-    'weather_dataset',                                       # Daily,       # Nature
     'wind_4_seconds_dataset',                                # 4_seconds,   # Energy     equal length
 ]
