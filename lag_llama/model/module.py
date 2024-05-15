@@ -438,7 +438,7 @@ class LagLlamaModel(nn.Module):
         n_embd_per_head: int,
         n_head: int,
         lags_seq: List[int],
-        distr_output: DistributionOutput,
+        # distr_output: DistributionOutput,
         rope_scaling=None,
         num_parallel_samples: int = 100,
         time_feat: bool = True,
@@ -474,11 +474,6 @@ class LagLlamaModel(nn.Module):
             self.scaler = RobustScaler(keepdim=True, dim=1)
         else:
             self.scaler = NOPScaler(keepdim=True, dim=1)
-
-        self.distr_output = distr_output
-        self.param_proj = self.distr_output.get_args_proj(
-            config.n_embd_per_head * config.n_head
-        )
 
         self.transformer = nn.ModuleDict(
             dict(
@@ -597,10 +592,8 @@ class LagLlamaModel(nn.Module):
         )  # (bsz, context_length+(pred_len-1), n_embd_per_head*n_head)
         if use_kv_cache:
             self.y_cache = True
-        params = self.param_proj(
-            x
-        )  # (bsz, context_length+(pred_len-1)) ; (bsz, context_length+(pred_len-1))
-        return params, loc, scale
+
+        return x, loc, scale
 
     def reset_cache(self) -> None:
         """
@@ -610,3 +603,150 @@ class LagLlamaModel(nn.Module):
         for block in self.transformer.h:
             block.y_cache = None
             block.attn.kv_cache = None
+
+class LagLlamaForForecasting(nn.Module):
+
+    def __init__(
+        self,
+        context_length: int,
+        max_context_length: int,
+        scaling: str,
+        input_size: int,
+        n_layer: int,
+        n_embd_per_head: int,
+        n_head: int,
+        lags_seq: List[int],
+        distr_output: DistributionOutput,
+        rope_scaling=None,
+        num_parallel_samples: int = 100,
+        time_feat: bool = True,
+        dropout: float = 0.0,
+        use_mamba: bool = True,
+    ) -> None:
+        super().__init__()
+        self.lag_llama = LagLlamaModel(
+            context_length=context_length,
+            max_context_length=max_context_length,
+            scaling=scaling,
+            input_size=input_size,
+            n_layer=n_layer,
+            n_embd_per_head=n_embd_per_head,
+            n_head=n_head,
+            lags_seq=lags_seq,
+            rope_scaling=rope_scaling,
+            num_parallel_samples=num_parallel_samples,
+            time_feat=time_feat,
+            dropout=dropout,
+            use_mamba=use_mamba,
+        )
+
+        self.distr_output = distr_output
+        self.param_proj = self.distr_output.get_args_proj(
+            self.lag_llama.config.n_embd_per_head * self.lag_llama.config.n_head
+        )
+
+    def forward(
+        self,
+        past_target: torch.Tensor,
+        past_observed_values: torch.Tensor,
+        past_time_feat: Optional[torch.Tensor] = None,
+        future_time_feat: Optional[torch.Tensor] = None,
+        future_target: Optional[torch.Tensor] = None,
+        use_kv_cache: bool = False,
+    ) -> torch.Tensor:
+        x, loc, scale = self.lag_llama(
+            past_target=past_target,
+            past_observed_values=past_observed_values,
+            past_time_feat=past_time_feat,
+            future_time_feat=future_time_feat,
+            future_target=future_target,
+            use_kv_cache=use_kv_cache,
+        )
+
+        params = self.param_proj(
+            x
+        )  # (bsz, context_length+(pred_len-1)) ; (bsz, context_length+(pred_len-1)) """
+
+        return params, loc, scale
+
+    def reset_cache(self) -> None:
+        """
+        Resets all cached key-values in attention.
+        Has to be called after prediction loop in predictor
+        """
+        self.lag_llama.reset_cache()
+
+class LagLlamaForClassification(nn.Module):
+
+    def __init__(
+        self,
+        num_labels: int,
+        context_length: int,
+        max_context_length: int,
+        scaling: str,
+        input_size: int,
+        n_layer: int,
+        n_embd_per_head: int,
+        n_head: int,
+        lags_seq: List[int],
+        rope_scaling=None,
+        num_parallel_samples: int = 100,
+        time_feat: bool = True,
+        dropout: float = 0.0,
+        use_mamba: bool = True,
+        classifier_dropout: Optional[float] = None,
+        hidden_size: int = 64,        
+    ) -> None:
+        
+        super().__init__()
+        
+        self.lag_llama = LagLlamaModel(
+            context_length=context_length,
+            max_context_length=max_context_length,
+            scaling=scaling,
+            input_size=input_size,
+            n_layer=n_layer,
+            n_embd_per_head=n_embd_per_head,
+            n_head=n_head,
+            lags_seq=lags_seq,
+            rope_scaling=rope_scaling,
+            num_parallel_samples=num_parallel_samples,
+            time_feat=time_feat,
+            dropout=dropout,
+            use_mamba=use_mamba,
+        )
+
+        dropout_ratio = (
+            classifier_dropout if classifier_dropout is not None else self.lag_llama.config.dropout
+        )
+        self.dropout = nn.Dropout(dropout_ratio)
+        self.classifier = nn.Linear(hidden_size, num_labels)
+
+    def forward(
+        self,
+        past_target: torch.Tensor,
+        past_observed_values: torch.Tensor,
+        past_time_feat: Optional[torch.Tensor] = None,
+        future_time_feat: Optional[torch.Tensor] = None,
+        future_target: Optional[torch.Tensor] = None,
+        use_kv_cache: bool = False,
+    ) -> torch.Tensor:
+        x, _, _ = self.lag_llama(
+            past_target=past_target,
+            past_observed_values=past_observed_values,
+            past_time_feat=past_time_feat,
+            future_time_feat=future_time_feat,
+            future_target=future_target,
+            use_kv_cache=use_kv_cache,
+        )
+
+        x = self.dropout(x)
+        x = self.classifier(x)
+        return x
+
+    def reset_cache(self) -> None:
+        """
+        Resets all cached key-values in attention.
+        Has to be called after prediction loop in predictor
+        """
+        self.lag_llama.reset_cache()
