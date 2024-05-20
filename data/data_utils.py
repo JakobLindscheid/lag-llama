@@ -14,6 +14,7 @@
 
 import copy
 import random
+import requests
 import warnings
 import gzip, json
 from pathlib import Path
@@ -137,6 +138,7 @@ def transform_data(data, metadata, dataset_name):
 
     # Define the mapping of frequency to its corresponding prediction length
     prediction_length_mapping = {
+        "300Hz": 30, # 300 Hz -> prediction length =30
         "4S": 30,   # 4 seconds -> prediction length = 30
         "30T": 24,  # Half-hourly (30 minutes) -> prediction length = 24
         "1H": 24,   # Hourly -> prediction length = 24
@@ -167,6 +169,8 @@ def transform_data(data, metadata, dataset_name):
 
     # Define the desired datetime format and default initial timestamps
     datetime_format = "%Y-%m-%d %H:%M:%S"
+    initial_timestamp = "2000-01-01 00:00:00"  # Use a reasonable default value
+
     if dataset_name in ("cif_2016_dataset"):
       initial_timestamp = "2015-01-01 00:00:00"
     elif dataset_name in ("dominick_dataset"):
@@ -186,8 +190,8 @@ def transform_data(data, metadata, dataset_name):
         output["data"].append(data_item)
     else:
       # Use the fixed initial timestamp
-      start_timestamp = initial_timestamp # BUG: inital_timestamp is not defined here
-    
+      start_timestamp = initial_timestamp
+
       for index, row in data.iterrows():
         series_value = list(row["series_value"])
         series_name = row["series_name"]
@@ -202,12 +206,25 @@ def transform_data(data, metadata, dataset_name):
     output_json = json.dumps(output, indent=4)
     return output_json
     
-def load_abnormal_heartbeat():
-    path_train = "/content/AbnormalHeartbeat_TRAIN.arff" # Change the path based on the file location
-    path_test = "/content/AbnormalHeartbeat_TEST.arff" # Change the path based on the file location
+def download_file(url, local_path):
+    response = requests.get(url)
+    response.raise_for_status()  # Ensure we notice bad responses
+    with open(local_path, 'wb') as file:
+        file.write(response.content)
 
-    train_data, train_meta = arff.loadarff(path_train)
-    test_data, test_meta = arff.loadarff(path_test)
+def load_abnormal_heartbeat():
+    url_train = "https://drive.google.com/uc?export=download&id=1gYd80B0P1OzAebqXQYOOuLViBaM6gYBG" 
+    url_test = "https://drive.google.com/uc?export=download&id=1U7Z_XGptYaFzkc4BoyLm8NGRXT3psA1W"
+ 
+    local_path_train = "AbnormalHeartbeat_TRAIN.arff"
+    local_path_test = "AbnormalHeartbeat_TEST.arff"
+    
+    download_file(url_train, local_path_train)
+    download_file(url_test, local_path_test)
+    
+    train_data, train_meta = arff.loadarff(local_path_train)
+    test_data, test_meta = arff.loadarff(local_path_test)
+
 
     df_train = pd.DataFrame(train_data)
     df_test = pd.DataFrame(test_data)
@@ -237,7 +254,9 @@ def load_abnormal_heartbeat():
         }
         test_series_list.append(test_series_entry)
     test_ds = ListDataset(test_series_list, freq="0.003S")
-    ds = TrainDatasets(metadata=metadata, train=train_ds, test=test_ds) # BUG: metadata is not defined here
+    metadata = MetaData(freq="300Hz", prediction_length=30)  # Adjust as needed
+
+    ds = TrainDatasets(metadata=metadata, train=train_ds, test=test_ds)
     return ds
     
 def create_train_and_val_datasets_with_dates(
