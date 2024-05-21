@@ -86,6 +86,7 @@ ALL_DATASETS = [ #27 original datasets
     'tourism_quarterly_dataset',                             # Quarterly,   # Tourism
     'tourism_yearly_dataset',                                # Yearly,      # Tourism
     'traffic_weekly_dataset',                                # Weekly,      # Transport  equal length
-    'us_births_dataset',                                     # Daily,       # Nature     equal length
+    'us_births_dataset',   
+    'weather_dataset'                                                                    # Daily,       # Nature     equal length
     'wind_4_seconds_dataset',                                # 4_seconds,   # Energy     equal length
 ]
