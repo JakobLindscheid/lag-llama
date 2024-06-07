@@ -28,6 +28,7 @@ from gluonts.torch.util import lagged_sequence_values, unsqueeze_expand
 
 from gluon_utils.scalers.robust_scaler import RobustScaler
 
+from st_moe_pytorch import MoE
 
 @dataclass
 class LTSMConfig:
@@ -39,19 +40,45 @@ class LTSMConfig:
     rope_scaling: Optional[dict] = None
     dropout: float = 0.0
     use_mamba: bool = False
+    use_jamba: bool = False
+    use_moe: bool = False
 
 
 class Block(nn.Module):
-    def __init__(self, config: LTSMConfig) -> None:
+    def __init__(self, config: LTSMConfig, depth=0) -> None:
         super().__init__()
         self.rms_1 = RMSNorm(config.n_embd_per_head * config.n_head)
-        self.attn = CausalSelfAttention(config)
+        self.attn = CausalSelfAttention(config, depth=depth)
         self.rms_2 = RMSNorm(config.n_embd_per_head * config.n_head)
-        self.mlp = MLP(config)
+        self.is_moe_block = config.use_moe and (depth+1) % 3 == 2
+        self.aux_loss_sum = 0
+        print(f"Using MoE: {config.use_moe} {self.is_moe_block}")
+        if self.is_moe_block:
+            hidden_dim = 4 * config.n_embd_per_head * config.n_head
+            n_hidden = int(2 * hidden_dim / 3)
+            n_hidden = find_multiple(n_hidden, 256)
+            self.moe = MoE(
+                dim = 144,
+                num_experts = 16,               # increase the experts (# parameters) of your model without increasing computation
+                gating_top_n = 2,               # default to top 2 gating, but can also be more (3 was tested in the paper with a lower threshold)
+                threshold_train = 0.2,          # at what threshold to accept a token to be routed to second expert and beyond - 0.2 was optimal for 2 expert routing, and apparently should be lower for 3
+                threshold_eval = 0.2,
+                capacity_factor_train = 1.25,   # experts have fixed capacity per batch. we need some extra capacity in case gating is not perfectly balanced.
+                capacity_factor_eval = 2.,      # capacity_factor_* should be set to a value >=1
+                balance_loss_coef = 1e-2,       # multiplier on the auxiliary expert balancing auxiliary loss
+                router_z_loss_coef = 1e-3,      # loss weight for router z-loss
+            )
+        else:
+            self.mlp = MLP(config)
 
     def forward(self, x: torch.Tensor, use_kv_cache: bool) -> torch.Tensor:
         x = x + self.attn(self.rms_1(x), use_kv_cache)
-        y = x + self.mlp(self.rms_2(x))
+        if self.is_moe_block:
+            moe_out, aux_loss, _, _ = self.moe(self.rms_2(x))
+            self.aux_loss_sum += aux_loss
+            y = x + moe_out
+        else:
+            y = x + self.mlp(self.rms_2(x))
         return y
 
 
@@ -194,33 +221,22 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids):
 
 
 class CausalSelfAttention(nn.Module):
-    def __init__(self, config: LTSMConfig) -> None:
+    def __init__(self, config: LTSMConfig, depth=0) -> None:
         super().__init__()
         # The name is no longer really correct, but this class used to
         #   apply the transformer layers to the sequence.
         # Now it performs a transformation on the sequence which is
         #   either through a transformer or a mamba module.
 
-        if not config.use_mamba:
-            # query projections for all heads, but in a batch
-            self.q_proj = nn.Linear(
-                config.n_embd_per_head * config.n_head,
-                config.n_embd_per_head * config.n_head,
-                bias=False,
-            )
-            # key, value projections
-            self.kv_proj = nn.Linear(
-                config.n_embd_per_head * config.n_head,
-                2 * config.n_embd_per_head * config.n_head,
-                bias=False,
-            )
-            # output projection
-            self.c_proj = nn.Linear(
-                config.n_embd_per_head * config.n_head,
-                config.n_embd_per_head * config.n_head,
-                bias=False,
-            )
-        else:
+        # The logic is messy but to explain:
+        #   Use mamba if we are using mamba AND we are not in a jamba transformer layer
+        print(f"Depth {depth}, Mamba: {config.use_mamba} Jamba: {config.use_jamba}")
+        is_jamba_transformer_layer = config.use_jamba and ((depth+1) % 3 == 0)
+        self.is_mamba_layer = config.use_mamba and (not is_jamba_transformer_layer)
+        print(f"Mamba layer: {self.is_mamba_layer}")
+        print(f"Jamba transformer layer: {is_jamba_transformer_layer}")
+
+        if self.is_mamba_layer:
             self.mamba_w = 64
             self.mamba_in = nn.Linear(
                 config.n_embd_per_head * config.n_head,
@@ -240,12 +256,34 @@ class CausalSelfAttention(nn.Module):
                 config.n_embd_per_head * config.n_head,
                 bias=False,
             )
+        else:
+            # query projections for all heads, but in a batch
+            self.q_proj = nn.Linear(
+                config.n_embd_per_head * config.n_head,
+                config.n_embd_per_head * config.n_head,
+                bias=False,
+            )
+            # key, value projections
+            self.kv_proj = nn.Linear(
+                config.n_embd_per_head * config.n_head,
+                2 * config.n_embd_per_head * config.n_head,
+                bias=False,
+            )
+            # output projection
+            self.c_proj = nn.Linear(
+                config.n_embd_per_head * config.n_head,
+                config.n_embd_per_head * config.n_head,
+                bias=False,
+            )
 
         self.n_head = config.n_head
         self.n_embd_per_head = config.n_embd_per_head
         self.block_size = config.block_size
         self.dropout = config.dropout
         self.use_mamba = config.use_mamba
+        self.use_jamba = config.use_jamba
+        self.use_moe = config.use_moe
+        self.depth = depth
 
         self.rope_scaling = config.rope_scaling
         self._rope_scaling_validation()
@@ -314,7 +352,11 @@ class CausalSelfAttention(nn.Module):
         # batch size, sequence length, embedding dimensionality (n_embd)
         (B, T, C) = x.size()
         
-        if not self.use_mamba:
+        if self.is_mamba_layer:
+            x = self.mamba_in(x)
+            x = self.mamba(x)
+            y = self.mamba_out(x)
+        else:
             # calculate query, key, values for all heads in batch and move head forward to be the batch dim
             q = self.q_proj(x)
             k, v = self.kv_proj(x).split(self.n_embd_per_head * self.n_head, dim=2)
@@ -367,10 +409,6 @@ class CausalSelfAttention(nn.Module):
 
             # output projection
             y = self.c_proj(y)
-        else:
-            x = self.mamba_in(x)
-            x = self.mamba(x)
-            y = self.mamba_out(x)
         return y
 
 
@@ -445,6 +483,8 @@ class LagLlamaModel(nn.Module):
         dropout: float = 0.0,
         # Our settings
         use_mamba: bool = True,
+        use_jamba: bool = True,
+        use_moe: bool = True,
     ) -> None:
         super().__init__()
         self.context_length = context_length
@@ -463,6 +503,8 @@ class LagLlamaModel(nn.Module):
             rope_scaling=rope_scaling,
             dropout=dropout,
             use_mamba=use_mamba,
+            use_jamba=use_jamba,
+            use_moe=use_moe,
         )
         self.num_parallel_samples = num_parallel_samples
 
@@ -485,7 +527,7 @@ class LagLlamaModel(nn.Module):
                 wte=nn.Linear(
                     config.feature_size, config.n_embd_per_head * config.n_head
                 ),
-                h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
+                h=nn.ModuleList([Block(config, depth=i) for i in range(config.n_layer)]),
                 ln_f=RMSNorm(config.n_embd_per_head * config.n_head),
             )
         )

@@ -250,6 +250,8 @@ def train(args):
         time_feat=args.time_feat,
         dropout=args.dropout,
         use_mamba=args.use_mamba,
+        use_jamba=args.use_jamba,
+        use_moe=args.use_moe,
         lags_seq=args.lags_seq,
         data_id_to_name_map=data_id_to_name_map,
         use_cosine_annealing_lr=args.use_cosine_annealing_lr,
@@ -846,6 +848,8 @@ if __name__ == "__main__":
     
     # Mamba
     parser.add_argument('--use_mamba', action="store_true", default=False)
+    parser.add_argument('--use_jamba', action="store_true", default=False)
+    parser.add_argument('--use_moe', action="store_true", default=False)
 
     args = parser.parse_args()
 

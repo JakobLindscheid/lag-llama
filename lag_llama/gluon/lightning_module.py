@@ -363,6 +363,13 @@ class LagLlamaLightningModule(LightningModule):
             else:
                 loss = self.loss(distr, target) * observed_values
 
+        # Adding loss for the MoE layers
+        moe_loss = 0
+        for block in self.model.transformer.h:
+            moe_loss += block.aux_loss_sum
+            block.aux_loss_sum = 0
+        loss = loss + moe_loss
+
         if not return_observed_values:
             return loss
         else:

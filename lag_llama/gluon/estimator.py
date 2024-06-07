@@ -159,6 +159,8 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         device: torch.device = torch.device("cuda"),
         # Our extra settings
         use_mamba: bool = False,
+        use_jamba: bool = False,
+        use_moe: bool = False,
     ) -> None:
         default_trainer_kwargs = {"max_epochs": 100}
         if trainer_kwargs is not None:
@@ -246,6 +248,8 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         self.device = device
 
         self.use_mamba = use_mamba
+        self.use_jamba = use_jamba
+        self.use_moe = use_moe
 
     @classmethod
     def derive_auto_fields(cls, train_iter):
@@ -302,6 +306,8 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
             "time_feat": self.time_feat,
             "dropout": self.dropout,
             "use_mamba": self.use_mamba,
+            "use_jamba": self.use_jamba,
+            "use_moe": self.use_moe,
         }
         if self.ckpt_path is not None:
             return LagLlamaLightningModule.load_from_checkpoint(
