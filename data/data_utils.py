@@ -303,8 +303,7 @@ def create_train_and_val_datasets_with_dates(
         raw_dataset = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
     elif name in ('car_parts_dataset_without_missing_values', 'cif_2016_dataset',
                   'covid_deaths_dataset', 'covid_mobility_dataset_without_missing_values', 
-                  'dominick_dataset', 'elecdemand_dataset', 'electricity_weekly_dataset', 
-                  'fred_md_dataset', 'hospital_dataset',
+                  'dominick_dataset', 'fred_md_dataset', 'hospital_dataset',
                   'kaggle_web_traffic_dataset_without_missing_values',
                   'kaggle_web_traffic_weekly_dataset', 'm1_monthly_dataset',
                   'm1_quarterly_dataset', 'm1_yearly_dataset', 'm3_monthly_dataset',
@@ -314,7 +313,7 @@ def create_train_and_val_datasets_with_dates(
                   'nn5_daily_dataset_without_missing_values', 'nn5_weekly_dataset',
                   'solar_4_seconds_dataset', 'solar_weekly_dataset', 'tourism_monthly_dataset',
                   'tourism_quarterly_dataset', 'tourism_yearly_dataset', 'traffic_weekly_dataset',
-                  'us_births_dataset', 'weather_dataset', 'wind_4_seconds_dataset'):
+                  'us_births_dataset', 'wind_4_seconds_dataset'):
         data, metadata = load_forecasting(name, return_metadata=True)
         output_json = transform_data(data, metadata, name)
         output_dict = json.loads(output_json)
@@ -450,8 +449,7 @@ def create_test_dataset(
         dataset = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
     elif name in ('car_parts_dataset_without_missing_values', 'cif_2016_dataset',
                   'covid_deaths_dataset', 'covid_mobility_dataset_without_missing_values', 
-                  'dominick_dataset', 'elecdemand_dataset', 'electricity_weekly_dataset', 
-                  'fred_md_dataset', 'hospital_dataset',
+                  'dominick_dataset', 'fred_md_dataset', 'hospital_dataset',
                   'kaggle_web_traffic_dataset_without_missing_values',
                   'kaggle_web_traffic_weekly_dataset', 'm1_monthly_dataset',
                   'm1_quarterly_dataset', 'm1_yearly_dataset', 'm3_monthly_dataset',
@@ -461,7 +459,7 @@ def create_test_dataset(
                   'nn5_daily_dataset_without_missing_values', 'nn5_weekly_dataset',
                   'solar_4_seconds_dataset', 'solar_weekly_dataset', 'tourism_monthly_dataset',
                   'tourism_quarterly_dataset', 'tourism_yearly_dataset', 'traffic_weekly_dataset',
-                  'us_births_dataset', 'weather_dataset', 'wind_4_seconds_dataset'):
+                  'us_births_dataset', 'wind_4_seconds_dataset'):
         data, metadata = load_forecasting(name, return_metadata=True)
         output_json = transform_data(data, metadata, name)
         output_dict = json.loads(output_json)
