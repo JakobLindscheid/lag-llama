@@ -54,14 +54,13 @@ ALL_DATASETS = [ #27 original datasets
     # economy
     "exchange_rate", 
 
-# NEW_REPOSITORY = #34 (Tot: 61)
-    #'AbnormalHeartbeat',                                     # 300 Hz       # Health 
+# NEW_REPOSITORY = #32 (Tot: 29)
+    'AbnormalHeartbeat',                                     # 300 Hz       # Health 
     'car_parts_dataset_without_missing_values',              # Monthly,     # Sales      equal length
     'cif_2016_dataset',                                      # Monthly,     # Banking      
     'covid_deaths_dataset',                                  # Daily,       # Nature     equal length
     'covid_mobility_dataset_without_missing_values',         # Daily,       # Nature
     'dominick_dataset',                                      # Weekly,      # Sales 
-    'elecdemand_dataset',                                    # half_hourly, # Energy     equal length
     'fred_md_dataset',                                       # Monthly,     # Economic   equal length
     'hospital_dataset',                                      # Monthly,     # Health     equal length
     'kaggle_web_traffic_dataset_without_missing_values',     # Daily,       # Web        equal length
@@ -86,7 +85,6 @@ ALL_DATASETS = [ #27 original datasets
     'tourism_quarterly_dataset',                             # Quarterly,   # Tourism
     'tourism_yearly_dataset',                                # Yearly,      # Tourism
     'traffic_weekly_dataset',                                # Weekly,      # Transport  equal length
-    'us_births_dataset',   
-    'weather_dataset'                                                                    # Daily,       # Nature     equal length
+    'us_births_dataset',                                     # Daily        # Nature
     'wind_4_seconds_dataset',                                # 4_seconds,   # Energy     equal length
 ]
