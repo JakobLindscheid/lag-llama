@@ -464,10 +464,10 @@ def create_test_dataset(
         output_json = transform_data(data, metadata, name)
         output_dict = json.loads(output_json)
         data = output_dict.get("data", [])
-        metadata = output_dict.get("metadata", {})
+        metadata = MetaData(**output_dict.get("metadata", {}))
         train_test_data = [x for x in data if type(x["target"][0]) != str]
-        full_dataset = ListDataset(train_test_data, freq=metadata["freq"])
-        train_ds = create_train_dataset_without_last_k_timesteps(full_dataset, freq=metadata["freq"], k=metadata["prediction_length"])
+        full_dataset = ListDataset(train_test_data, freq=metadata.freq)
+        train_ds = create_train_dataset_without_last_k_timesteps(full_dataset, freq=metadata.freq, k=metadata.prediction_length)
         dataset = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
     elif name in ('AbnormalHeartbeat'):
         dataset = load_abnormal_heartbeat()
